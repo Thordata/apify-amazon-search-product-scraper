@@ -106,6 +106,184 @@ def _country_to_domain(country: str) -> str:
     return mapping.get(country.upper(), 'www.amazon.com')
 
 
+async def _parse_single_card(
+    card: Locator,
+    base_url: str,
+    min_rating: Optional[float],
+    min_reviews: Optional[int],
+    exclude_sponsored: bool,
+) -> Optional[Dict[str, Any]]:
+    """Parse a single product card into a structured item."""
+    try:
+        # ASIN
+        asin = await card.get_attribute('data-asin')
+        if not asin:
+            return None
+
+        # Title (use a selector pattern that matches current Amazon layout,
+        # with fallbacks for older variants).
+        title_el = card.locator('a.a-link-normal.s-link-style.a-text-normal')
+        if await title_el.count() == 0:
+            title_el = card.locator('h2 a.a-link-normal')
+
+        if await title_el.count() == 0:
+            Actor.log.debug('Skipping card: no title link found')
+            return None
+
+        title = (await title_el.first.text_content() or '').strip()
+
+        # Product detail URL
+        href = await title_el.first.get_attribute('href')
+        if not href:
+            Actor.log.debug('Skipping card: title link has no href')
+            return None
+        if href.startswith('/'):
+            product_url = f"{base_url}{href.split('?')[0]}"
+        else:
+            product_url = href.split('?')[0]
+
+        # Price (use the offscreen text and also try to parse numeric value)
+        price_locator = card.locator('span.a-price > span.a-offscreen')
+        whole = ''
+        if await price_locator.count() > 0:
+            whole = (await price_locator.first.text_content() or '').strip()
+        price = None
+        if whole:
+            price_text = whole
+            # Normalize number for both US (1,234.56) and EU (1.234,56) styles.
+            numeric_part = ''.join(ch if (ch.isdigit() or ch in ',.') else '' for ch in whole)
+            if numeric_part:
+                if ',' in numeric_part and '.' not in numeric_part:
+                    # Likely EU style: 92,14 -> 92.14
+                    normalized = numeric_part.replace('.', '').replace(',', '.')
+                else:
+                    # US style or mixed: 1,234.56 -> 1234.56
+                    normalized = numeric_part.replace(',', '')
+                try:
+                    price = float(normalized)
+                except ValueError:
+                    price = None
+        else:
+            price_text = ''
+
+        # Currency (best-effort: look at leading symbol or trailing ISO code).
+        currency = ''
+        if price_text:
+            stripped = price_text.strip()
+            if stripped and stripped[0] in '$€£¥':
+                currency = stripped[0]
+            else:
+                last_token = stripped.split()[-1]
+                if len(last_token) in {3, 4}:
+                    currency = last_token
+
+        # Original (striked-through) price
+        original_price_locator = card.locator('span.a-price.a-text-price span.a-offscreen')
+        original_price_text = ''
+        if await original_price_locator.count() > 0:
+            original_price_text = (await original_price_locator.first.text_content() or '').strip()
+
+        # Rating and reviews count
+        rating_locator = card.locator('span.a-icon-alt')
+        rating_text = ''
+        if await rating_locator.count() > 0:
+            rating_text = (await rating_locator.first.text_content() or '').strip()
+        rating_value: Optional[float] = None
+        if rating_text:
+            try:
+                rating_value = float(rating_text.split()[0].replace(',', '.'))
+            except (ValueError, IndexError):
+                rating_value = None
+
+        reviews_locator = card.locator('span.a-size-base.s-underline-text')
+        reviews_text = ''
+        if await reviews_locator.count() > 0:
+            reviews_text = (await reviews_locator.first.text_content() or '').strip()
+        reviews_count: Optional[int] = None
+        if reviews_text:
+            try:
+                reviews_count = int(reviews_text.replace(',', '').replace('.', ''))
+            except ValueError:
+                reviews_count = None
+
+        # Prime badge
+        is_prime = await card.locator('i.a-icon.a-icon-prime, span[data-component-type=\"s-prime\"]').count() > 0
+
+        # Brand (best-effort; may be missing for some results)
+        brand = await card.get_attribute('data-brand') or ''
+        brand = (brand or '').strip()
+        if not brand:
+            brand_locator = card.locator('h5.s-line-clamp-1 span, span.a-size-base-plus.a-color-base')
+            if await brand_locator.count() > 0:
+                brand = (await brand_locator.first.text_content() or '').strip()
+
+        if brand:
+            lowered = brand.lower()
+            badge_like_keywords = [
+                "amazon's choice",
+                'overall pick',
+                'best seller',
+                'limited time deal',
+            ]
+            if any(k in lowered for k in badge_like_keywords):
+                brand = ''
+
+        # Badges / labels (e.g. Amazon's Choice, Best Seller)
+        badge_locator = card.locator(
+            'span.a-badge-text, span.s-label-popover-default, span.s-label-popover-default span.a-badge-label-inner'
+        )
+        badges: List[str] = []
+        if await badge_locator.count() > 0:
+            for i in range(await badge_locator.count()):
+                text = await badge_locator.nth(i).text_content()
+                if text:
+                    cleaned = text.strip()
+                    if cleaned and cleaned not in badges:
+                        badges.append(cleaned)
+
+        # Sponsored flag
+        sponsored_locator = card.locator('span.s-sponsored-label-text, span.a-color-secondary')
+        is_sponsored = False
+        if await sponsored_locator.count() > 0:
+            text = (await sponsored_locator.first.text_content() or '').strip().lower()
+            if 'sponsored' in text:
+                is_sponsored = True
+
+        # Filters:
+        if min_rating is not None and rating_value is not None and rating_value < min_rating:
+            return None
+        if min_reviews is not None and reviews_count is not None and reviews_count < min_reviews:
+            return None
+        if exclude_sponsored and is_sponsored:
+            return None
+
+        # Main image (take the first matching s-image to avoid strict-mode violations)
+        image_locator = card.locator('img.s-image')
+        image_url = ''
+        if await image_locator.count() > 0:
+            image_url = (await image_locator.first.get_attribute('src')) or ''
+
+        return {
+            'asin': asin,
+            'title': title,
+            'productUrl': product_url,
+            'priceText': price_text,
+            'price': price,
+            'originalPriceText': original_price_text,
+            'rating': rating_value,
+            'reviewsCount': reviews_count,
+            'isPrime': is_prime,
+            'brand': brand,
+            'badges': badges,
+            'isSponsored': is_sponsored,
+            'imageUrl': image_url,
+            'currency': currency,
+        }
+    except Exception:
+        Actor.log.debug('Failed to parse one product card', exc_info=True)
+        return None
+
+
 async def _extract_product_cards(
     card_locators: List[Locator],
     base_url: str,
@@ -118,180 +296,22 @@ async def _extract_product_cards(
 
     for card in card_locators:
         try:
-            # ASIN
-            asin = await card.get_attribute('data-asin')
-            if not asin:
-                continue
-
-            # Title (use a selector pattern that matches current Amazon layout,
-            # with fallbacks for older variants).
-            title_el = card.locator('a.a-link-normal.s-link-style.a-text-normal')
-            if await title_el.count() == 0:
-                title_el = card.locator('h2 a.a-link-normal')
-
-            if await title_el.count() == 0:
-                Actor.log.debug('Skipping card: no title link found')
-                continue
-
-            title = (await title_el.first.text_content() or '').strip()
-
-            # Product detail URL
-            href = await title_el.first.get_attribute('href')
-            if not href:
-                Actor.log.debug('Skipping card: title link has no href')
-                continue
-            if href.startswith('/'):
-                product_url = f"{base_url}{href.split('?')[0]}"
-            else:
-                product_url = href.split('?')[0]
-
-            # Price (use the offscreen text and also try to parse numeric value)
-            price_locator = card.locator('span.a-price > span.a-offscreen')
-            whole = ''
-            if await price_locator.count() > 0:
-                whole = (await price_locator.first.text_content() or '').strip()
-            price = None
-            if whole:
-                price_text = whole
-                # Normalize number for both US (1,234.56) and EU (1.234,56) styles.
-                numeric_part = ''.join(ch if (ch.isdigit() or ch in ',.') else '' for ch in whole)
-                if numeric_part:
-                    if ',' in numeric_part and '.' not in numeric_part:
-                        # Likely EU style: 92,14 -> 92.14
-                        normalized = numeric_part.replace('.', '').replace(',', '.')
-                    else:
-                        # US style or mixed: 1,234.56 -> 1234.56
-                        normalized = numeric_part.replace(',', '')
-                    try:
-                        price = float(normalized)
-                    except ValueError:
-                        price = None
-            else:
-                price_text = ''
-
-            # Currency (best-effort: look at leading symbol or trailing ISO code).
-            currency = ''
-            if price_text:
-                # Simple heuristics: leading symbol or last token.
-                stripped = price_text.strip()
-                if stripped[0] in '$€£¥':
-                    currency = stripped[0]
-                else:
-                    # Try last token as ISO code (e.g. USD, EUR, JPY).
-                    last_token = stripped.split()[-1]
-                    if len(last_token) in {3, 4}:
-                        currency = last_token
-
-            # Original (striked-through) price
-            original_price_locator = card.locator('span.a-price.a-text-price span.a-offscreen')
-            original_price_text = ''
-            if await original_price_locator.count() > 0:
-                original_price_text = (await original_price_locator.first.text_content() or '').strip()
-
-            # Rating and reviews count
-            rating_locator = card.locator('span.a-icon-alt')
-            rating_text = ''
-            if await rating_locator.count() > 0:
-                rating_text = (await rating_locator.first.text_content() or '').strip()
-            rating_value: Optional[float] = None
-            if rating_text:
-                try:
-                    rating_value = float(rating_text.split()[0].replace(',', '.'))
-                except (ValueError, IndexError):
-                    rating_value = None
-
-            reviews_locator = card.locator('span.a-size-base.s-underline-text')
-            reviews_text = ''
-            if await reviews_locator.count() > 0:
-                reviews_text = (await reviews_locator.first.text_content() or '').strip()
-            reviews_count: Optional[int] = None
-            if reviews_text:
-                try:
-                    reviews_count = int(reviews_text.replace(',', '').replace('.', ''))
-                except ValueError:
-                    reviews_count = None
-
-            # Prime badge
-            is_prime = await card.locator('i.a-icon.a-icon-prime, span[data-component-type=\"s-prime\"]').count() > 0
-
-            # Brand (best-effort; may be missing for some results)
-            # 1) Prefer explicit data-brand attribute if present.
-            brand = await card.get_attribute('data-brand') or ''
-            brand = (brand or '').strip()
-
-            # 2) Fallback to common brand label selectors near the title.
-            if not brand:
-                brand_locator = card.locator('h5.s-line-clamp-1 span, span.a-size-base-plus.a-color-base')
-                if await brand_locator.count() > 0:
-                    brand = (await brand_locator.first.text_content() or '').strip()
-
-            # 3) Clean brand so that Amazon badges like "Amazon\'s Choice" are not mistaken for brand names.
-            if brand:
-                lowered = brand.lower()
-                badge_like_keywords = [
-                    "amazon's choice",
-                    'overall pick',
-                    'best seller',
-                    'limited time deal',
-                ]
-                if any(k in lowered for k in badge_like_keywords):
-                    brand = ''
-
-            # Badges / labels (e.g. Amazon\'s Choice, Best Seller)
-            badge_locator = card.locator(
-                'span.a-badge-text, span.s-label-popover-default, span.s-label-popover-default span.a-badge-label-inner'
+            item = await asyncio.wait_for(
+                _parse_single_card(
+                    card=card,
+                    base_url=base_url,
+                    min_rating=min_rating,
+                    min_reviews=min_reviews,
+                    exclude_sponsored=exclude_sponsored,
+                ),
+                timeout=5,  # seconds per card
             )
-            badges: List[str] = []
-            if await badge_locator.count() > 0:
-                for i in range(await badge_locator.count()):
-                    text = await badge_locator.nth(i).text_content()
-                    if text:
-                        cleaned = text.strip()
-                        if cleaned and cleaned not in badges:
-                            badges.append(cleaned)
+        except asyncio.TimeoutError:
+            Actor.log.warning('Timed out while parsing a single product card, skipping it.')
+            continue
 
-            # Sponsored flag
-            sponsored_locator = card.locator('span.s-sponsored-label-text, span.a-color-secondary')
-            is_sponsored = False
-            if await sponsored_locator.count() > 0:
-                text = (await sponsored_locator.first.text_content() or '').strip().lower()
-                if 'sponsored' in text:
-                    is_sponsored = True
-
-            # Filters:
-            # - rating
-            if min_rating is not None and rating_value is not None and rating_value < min_rating:
-                continue
-            # - reviews count
-            if min_reviews is not None and reviews_count is not None and reviews_count < min_reviews:
-                continue
-            # - sponsored
-            if exclude_sponsored and is_sponsored:
-                continue
-
-            # Main image
-            image_el = card.locator('img.s-image')
-            image_url = (await image_el.get_attribute('src')) or ''
-
-            item: Dict[str, Any] = {
-                'asin': asin,
-                'title': title,
-                'productUrl': product_url,
-                'priceText': price_text,
-                'price': price,
-                'originalPriceText': original_price_text,
-                'rating': rating_value,
-                'reviewsCount': reviews_count,
-                'isPrime': is_prime,
-                'brand': brand,
-                'badges': badges,
-                'isSponsored': is_sponsored,
-                'imageUrl': image_url,
-                'currency': currency,
-            }
+        if item:
             items.append(item)
-        except Exception:
-            Actor.log.debug('Failed to parse one product card', exc_info=True)
 
     return items
 
