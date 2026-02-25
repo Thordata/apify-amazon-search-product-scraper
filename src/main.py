@@ -368,30 +368,23 @@ async def _scrape_keyword(
             if not cards:
                 break
 
-            # Bound the time spent parsing cards to avoid hitting the overall Actor timeout
-            # in case of unexpected Playwright stalls on the page.
-            try:
-                items = await asyncio.wait_for(
-                    _extract_product_cards(
-                        cards,
-                        base_url=base_url,
-                        min_rating=min_rating,
-                        min_reviews=min_reviews,
-                        exclude_sponsored=exclude_sponsored,
-                    ),
-                    timeout=60,  # seconds
-                )
-            except asyncio.TimeoutError:
-                Actor.log.warning(
-                    f'Timed out while parsing product cards for "{keyword}" on page {page_index}. '
-                    'Stopping this keyword early to avoid run-level timeout.'
-                )
+            # Only parse as many cards as we still need, to avoid wasting time on extra items.
+            remaining = max_items - total_collected
+            if remaining <= 0:
                 break
+            if len(cards) > remaining:
+                cards = cards[:remaining]
+
+            items = await _extract_product_cards(
+                cards,
+                base_url=base_url,
+                min_rating=min_rating,
+                min_reviews=min_reviews,
+                exclude_sponsored=exclude_sponsored,
+            )
 
             Actor.log.info(f'Parsed {len(items)} products from cards on page {page_index}')
 
-            remaining = max_items - total_collected
-            items = items[:remaining]
 
             if not items:
                 Actor.log.info('No valid products parsed from cards, stopping for this keyword.')
