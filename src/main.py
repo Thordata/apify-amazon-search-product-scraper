@@ -368,13 +368,26 @@ async def _scrape_keyword(
             if not cards:
                 break
 
-            items = await _extract_product_cards(
-                cards,
-                base_url=base_url,
-                min_rating=min_rating,
-                min_reviews=min_reviews,
-                exclude_sponsored=exclude_sponsored,
-            )
+            # Bound the time spent parsing cards to avoid hitting the overall Actor timeout
+            # in case of unexpected Playwright stalls on the page.
+            try:
+                items = await asyncio.wait_for(
+                    _extract_product_cards(
+                        cards,
+                        base_url=base_url,
+                        min_rating=min_rating,
+                        min_reviews=min_reviews,
+                        exclude_sponsored=exclude_sponsored,
+                    ),
+                    timeout=60,  # seconds
+                )
+            except asyncio.TimeoutError:
+                Actor.log.warning(
+                    f'Timed out while parsing product cards for "{keyword}" on page {page_index}. '
+                    'Stopping this keyword early to avoid run-level timeout.'
+                )
+                break
+
             Actor.log.info(f'Parsed {len(items)} products from cards on page {page_index}')
 
             remaining = max_items - total_collected
@@ -494,6 +507,7 @@ async def main() -> None:
                 headless=Actor.configuration.headless,
                 args=['--disable-gpu'],
             )
+
             # Use a realistic desktop browser profile to reduce basic bot detection
             # and adapt locale slightly per marketplace.
             locale_by_country = {
