@@ -1,0 +1,134 @@
+{
+    "actorSpecification": 1,
+    "fields": {
+        "keyword": {
+            "type": "string"
+        },
+        "country": {
+            "type": "string"
+        },
+        "asin": {
+            "type": "string"
+        },
+        "title": {
+            "type": "string"
+        },
+        "price": {
+            "type": "number"
+        },
+        "priceText": {
+            "type": "string"
+        },
+        "rating": {
+            "type": "number"
+        },
+        "reviewsCount": {
+            "type": "integer"
+        },
+        "isPrime": {
+            "type": "boolean"
+        },
+        "brand": {
+            "type": "string"
+        },
+        "badges": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "isSponsored": {
+            "type": "boolean"
+        },
+        "productUrl": {
+            "type": "string"
+        },
+        "imageUrl": {
+            "type": "string"
+        },
+        "categoryPath": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "currency": {
+            "type": "string"
+        },
+        "featureBullets": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        }
+    },
+    "views": {
+        "overview": {
+            "title": "Overview",
+            "transformation": {
+                "fields": [
+                    "keyword",
+                    "country",
+                    "asin",
+                    "title",
+                    "price",
+                    "rating",
+                    "reviewsCount",
+                    "isPrime",
+                    "brand",
+                    "isSponsored",
+                    "productUrl"
+                ]
+            },
+            "display": {
+                "component": "table",
+                "properties": {
+                    "keyword": {
+                        "label": "Keyword",
+                        "format": "text"
+                    },
+                    "country": {
+                        "label": "Country",
+                        "format": "text"
+                    },
+                    "asin": {
+                        "label": "ASIN",
+                        "format": "text"
+                    },
+                    "title": {
+                        "label": "Title",
+                        "format": "text"
+                    },
+                    "price": {
+                        "label": "Price",
+                        "format": "number"
+                    },
+                    "rating": {
+                        "label": "Rating",
+                        "format": "number"
+                    },
+                    "reviewsCount": {
+                        "label": "Reviews",
+                        "format": "number"
+                    },
+                    "isPrime": {
+                        "label": "Prime",
+                        "format": "boolean"
+                    },
+                    "brand": {
+                        "label": "Brand",
+                        "format": "text"
+                    },
+                    "isSponsored": {
+                        "label": "Sponsored",
+                        "format": "boolean"
+                    },
+                    "productUrl": {
+                        "label": "Product URL",
+                        "format": "link"
+                    }
+                }
+            }
+        }
+    }
+}

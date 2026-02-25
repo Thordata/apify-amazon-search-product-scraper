@@ -1,0 +1,72 @@
+{
+    "title": "Amazon Search & Product Scraper",
+    "type": "object",
+    "schemaVersion": 1,
+    "properties": {
+        "keywords": {
+            "title": "Keywords",
+            "type": "array",
+            "description": "List of search keywords, for example [\"iphone 17 case\", \"usb c hub\"].",
+            "editor": "stringList",
+            "prefill": ["iphone 17 case"]
+        },
+        "max_items_per_keyword": {
+            "title": "Max items per keyword",
+            "type": "integer",
+            "description": "Maximum number of products to scrape for each keyword (recommended 10–200).",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 500
+        },
+        "max_pages": {
+            "title": "Max pages per keyword",
+            "type": "integer",
+            "description": "Maximum number of result pages to crawl for each keyword (1–20).",
+            "default": 3,
+            "minimum": 1,
+            "maximum": 20
+        },
+        "country": {
+            "title": "Marketplace / Country",
+            "type": "string",
+            "description": "Amazon marketplace to scrape (US, UK, DE, FR, JP).",
+            "default": "US",
+            "enum": ["US", "UK", "DE", "FR", "JP"],
+            "enumTitles": ["Amazon.com (US)", "Amazon.co.uk (UK)", "Amazon.de (DE)", "Amazon.fr (FR)", "Amazon.co.jp (JP)"]
+        },
+        "min_rating": {
+            "title": "Min rating",
+            "type": "number",
+            "description": "Filter out products with rating lower than this value, e.g. 4.0.",
+            "default": 0
+        },
+        "min_reviews": {
+            "title": "Min reviews count",
+            "type": "integer",
+            "description": "If > 0, filter out products with fewer reviews than this value.",
+            "default": 0,
+            "minimum": 0
+        },
+        "exclude_sponsored": {
+            "title": "Exclude sponsored products",
+            "type": "boolean",
+            "description": "If true, sponsored results will be filtered out.",
+            "default": false
+        },
+        "fetch_details": {
+            "title": "Fetch product details (category, more info)",
+            "type": "boolean",
+            "description": "If true, the Actor will open product detail pages for the first N items (see max_detail_items).",
+            "default": false
+        },
+        "max_detail_items": {
+            "title": "Max detail items per keyword",
+            "type": "integer",
+            "description": "Maximum number of products per keyword for which to open the detail page (only used when fetch_details=true).",
+            "default": 5,
+            "minimum": 1,
+            "maximum": 50
+        }
+    },
+    "required": ["keywords"]
+}

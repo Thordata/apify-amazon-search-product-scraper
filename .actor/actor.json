@@ -1,0 +1,18 @@
+{
+	"actorSpecification": 1,
+	"name": "apify-amazon-search-actor",
+	"title": "Amazon Search & Product Scraper",
+	"description": "Search Amazon by keywords and scrape product list data (ASIN, price, rating, reviews, Prime, image, etc.).",
+	"version": "0.0",
+	"buildTag": "latest",
+	"meta": {
+		"templateId": "python-playwright",
+		"generatedBy": "Cursor GPT-5.1"
+	},
+	"input": "./input_schema.json",
+	"output": "./output_schema.json",
+	"storages": {
+		"dataset": "./dataset_schema.json"
+	},
+	"dockerfile": "../Dockerfile"
+}
