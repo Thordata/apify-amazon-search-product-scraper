@@ -1,67 +1,6 @@
 {
     "actorSpecification": 1,
-    "fields": {
-        "keyword": {
-            "type": "string"
-        },
-        "country": {
-            "type": "string"
-        },
-        "asin": {
-            "type": "string"
-        },
-        "title": {
-            "type": "string"
-        },
-        "price": {
-            "type": "number"
-        },
-        "priceText": {
-            "type": "string"
-        },
-        "rating": {
-            "type": "number"
-        },
-        "reviewsCount": {
-            "type": "integer"
-        },
-        "isPrime": {
-            "type": "boolean"
-        },
-        "brand": {
-            "type": "string"
-        },
-        "badges": {
-            "type": "array",
-            "items": {
-                "type": "string"
-            }
-        },
-        "isSponsored": {
-            "type": "boolean"
-        },
-        "productUrl": {
-            "type": "string"
-        },
-        "imageUrl": {
-            "type": "string"
-        },
-        "categoryPath": {
-            "type": "array",
-            "items": {
-                "type": "string"
-            }
-        },
-        "currency": {
-            "type": "string"
-        },
-        "featureBullets": {
-            "type": "array",
-            "items": {
-                "type": "string"
-            }
-        }
-    },
+    "fields": {},
     "views": {
         "overview": {
             "title": "Overview",
